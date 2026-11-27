@@ -1,24 +1,29 @@
 import express from 'express';
 
 const app = express();
-
-// Parse incoming JSON request bodies
-app.use(express.json());
-
-// Render provides PORT automatically; use 5000 locally
 const PORT = process.env.PORT || 5000;
 
-// Temporary in-memory product storage (data resets when server restarts)
+// Parse JSON request bodies. Malformed JSON is handled by the error middleware below.
+app.use(express.json({ limit: '1mb' }));
+
+// In-memory storage: products are cleared whenever the server restarts.
 const products = [];
+
+const parseProductId = (value) => {
+    if (value === undefined || value === null || String(value).trim() === '') {
+        return null;
+    }
+
+    const id = Number(value);
+    return Number.isSafeInteger(id) ? id : null;
+};
 
 // Home route
 app.get('/', (req, res) => {
-    res.status(200).send(
-        'FSD-2 Non-Persistent App is Running Successfully!'
-    );
+    res.status(200).send('FSD-2 Non-Persistent App is Running Successfully!');
 });
 
-// Health check route
+// Health check
 app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'success',
@@ -26,36 +31,21 @@ app.get('/health', (req, res) => {
     });
 });
 
-// POST - Create a product
+// Create a product
 app.post('/products', (req, res) => {
     const newProduct = req.body;
 
     if (!newProduct || typeof newProduct !== 'object' || Array.isArray(newProduct)) {
-        return res.status(400).json({
-            message: 'Please provide a valid product object'
-        });
+        return res.status(400).json({ message: 'Please provide a valid product object' });
     }
 
-    if (newProduct.id === undefined || newProduct.id === null) {
-        return res.status(400).json({
-            message: 'Product id is required'
-        });
+    const productId = parseProductId(newProduct.id);
+    if (productId === null) {
+        return res.status(400).json({ message: 'A valid integer product id is required' });
     }
 
-    const productId = Number(newProduct.id);
-
-    if (!Number.isInteger(productId)) {
-        return res.status(400).json({
-            message: 'Product id must be an integer'
-        });
-    }
-
-    const alreadyExists = products.some((product) => Number(product.id) === productId);
-
-    if (alreadyExists) {
-        return res.status(409).json({
-            message: 'A product with this id already exists'
-        });
+    if (products.some((product) => product.id === productId)) {
+        return res.status(409).json({ message: 'A product with this id already exists' });
     }
 
     const productToSave = { ...newProduct, id: productId };
@@ -67,7 +57,7 @@ app.post('/products', (req, res) => {
     });
 });
 
-// GET - Read all products
+// Read all products
 app.get('/products', (req, res) => {
     res.status(200).json({
         message: 'Products fetched successfully',
@@ -75,22 +65,16 @@ app.get('/products', (req, res) => {
     });
 });
 
-// GET - Read a product by ID
+// Read one product
 app.get('/products/:id', (req, res) => {
-    const productId = Number(req.params.id);
-
-    if (!Number.isInteger(productId)) {
-        return res.status(400).json({
-            message: 'Product id must be an integer'
-        });
+    const productId = parseProductId(req.params.id);
+    if (productId === null) {
+        return res.status(400).json({ message: 'Product id must be an integer' });
     }
 
-    const product = products.find((item) => Number(item.id) === productId);
-
+    const product = products.find((item) => item.id === productId);
     if (!product) {
-        return res.status(404).json({
-            message: 'Product not found'
-        });
+        return res.status(404).json({ message: 'Product not found' });
     }
 
     return res.status(200).json({
@@ -99,38 +83,25 @@ app.get('/products/:id', (req, res) => {
     });
 });
 
-// PUT - Update a product by ID
+// Update a product
 app.put('/products/:id', (req, res) => {
-    const productId = Number(req.params.id);
-
-    if (!Number.isInteger(productId)) {
-        return res.status(400).json({
-            message: 'Product id must be an integer'
-        });
-    }
-
-    const productIndex = products.findIndex(
-        (item) => Number(item.id) === productId
-    );
-
-    if (productIndex === -1) {
-        return res.status(404).json({
-            message: 'Product not found'
-        });
+    const productId = parseProductId(req.params.id);
+    if (productId === null) {
+        return res.status(400).json({ message: 'Product id must be an integer' });
     }
 
     const updates = req.body;
-
     if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
-        return res.status(400).json({
-            message: 'Please provide a valid product object'
-        });
+        return res.status(400).json({ message: 'Please provide a valid product object' });
     }
 
-    if (updates.id !== undefined && Number(updates.id) !== productId) {
-        return res.status(400).json({
-            message: 'Product id cannot be changed'
-        });
+    if (updates.id !== undefined && parseProductId(updates.id) !== productId) {
+        return res.status(400).json({ message: 'Product id cannot be changed' });
+    }
+
+    const productIndex = products.findIndex((item) => item.id === productId);
+    if (productIndex === -1) {
+        return res.status(404).json({ message: 'Product not found' });
     }
 
     products[productIndex] = {
@@ -145,46 +116,44 @@ app.put('/products/:id', (req, res) => {
     });
 });
 
-// DELETE - Delete a product by ID
+// Delete a product
 app.delete('/products/:id', (req, res) => {
-    const productId = Number(req.params.id);
-
-    if (!Number.isInteger(productId)) {
-        return res.status(400).json({
-            message: 'Product id must be an integer'
-        });
+    const productId = parseProductId(req.params.id);
+    if (productId === null) {
+        return res.status(400).json({ message: 'Product id must be an integer' });
     }
 
-    const productIndex = products.findIndex(
-        (item) => Number(item.id) === productId
-    );
-
+    const productIndex = products.findIndex((item) => item.id === productId);
     if (productIndex === -1) {
-        return res.status(404).json({
-            message: 'Product not found'
-        });
+        return res.status(404).json({ message: 'Product not found' });
     }
 
-    const deletedProduct = products.splice(productIndex, 1)[0];
-
+    const [deletedProduct] = products.splice(productIndex, 1);
     return res.status(200).json({
         message: 'Product deleted successfully',
         data: deletedProduct
     });
 });
 
-// Handle invalid JSON bodies
-app.use((err, req, res, next) => {
-    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-        return res.status(400).json({
-            message: 'Invalid JSON in request body'
-        });
-    }
-
-    return next(err);
+// Unknown routes
+app.use((req, res) => {
+    res.status(404).json({ message: 'Route not found' });
 });
 
-// Start server
+// Central error handler (including malformed JSON)
+app.use((err, req, res, next) => {
+    if (res.headersSent) {
+        return next(err);
+    }
+
+    if (err instanceof SyntaxError && err.status === 400 && Object.prototype.hasOwnProperty.call(err, 'body')) {
+        return res.status(400).json({ message: 'Invalid JSON in request body' });
+    }
+
+    console.error('Server error:', err);
+    return res.status(500).json({ message: 'Internal server error' });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
 });
