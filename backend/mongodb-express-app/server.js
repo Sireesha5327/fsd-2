@@ -1,106 +1,120 @@
 import express from "express";
-import {MongoClient ,ObjectId} from "mongodb";
-
-const MONGO_URL = "mongodb+srv://deepikaarugalla_db_user:CTwGuWP9yQWmDb3p@cluster0.wvbmzxj.mongodb.net"; //connecting to mongodb server
-const dbName = "booksDB";
-
-const client = new MongoClient(MONGO_URL);
-let db;
-
-client.connect().then(() => {
-    db=client.db(dbName);
-    console.log(`Connected to database:${dbName}`);
-}).catch((err) => {
-    console.error("Error connecting to database:", err);
-});
+import { MongoClient, ObjectId } from "mongodb";
+import "dotenv/config";
 
 const app = express();
+const PORT = process.env.PORT || 8080;
+const MONGO_URL = process.env.MONGO_URI;
+const DB_NAME = process.env.DB_NAME || "booksDB";
+
 app.use(express.json());
 
-//CURD
-//create POST http://localhost:8080/api/v1/books
-//payload: { "title", "author", "Category", "price"}
-app.post("/api/v1/books",  (req, res) => {
-    const body = req.body;
-    db.collection("books").insertOne(body).then((result) => {
-        res.status(201).json({ message: "Book created successfully", data:{ _id: result.insertedId } });
-    }).catch((err) => {
-        console.error("Error creating book:", err);
-        res.status(500).json({ message: "Error creating book" });
-    });
+let db;
+
+const isValidId = (id) => ObjectId.isValid(id) && String(new ObjectId(id)) === id;
+
+app.get("/", (req, res) => {
+  res.status(200).json({ message: "Books API is running" });
 });
 
-//Read GET http://localhost:8080/api/v1/books
+// Create a book
+app.post("/api/v1/books", async (req, res) => {
+  try {
+    const { title, author, category, price } = req.body;
+    if (!title || !author || !category || price === undefined) {
+      return res.status(400).json({ message: "title, author, category and price are required" });
+    }
+    const result = await db.collection("books").insertOne({ title, author, category, price });
+    return res.status(201).json({
+      message: "Book created successfully",
+      data: { _id: result.insertedId }
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Error creating book", error: error.message });
+  }
+});
+
+// Read all books, optionally filtered by category
 app.get("/api/v1/books", async (req, res) => {
-    const {category}=req.query;
-    const query=category?{category}:{}; //if category is present then filter by category else return all books
-    db.collection("books").find(query).toArray().then((result) => {
-        res.status(200).json({message:"Books fetched successfully","data":result});
-    }).catch((err) => {
-        err.message="Problem in fetching books";
-        throw error;
-    });
+  try {
+    const query = req.query.category ? { category: req.query.category } : {};
+    const books = await db.collection("books").find(query).toArray();
+    return res.status(200).json({ message: "Books fetched successfully", data: books });
+  } catch (error) {
+    return res.status(500).json({ message: "Problem fetching books", error: error.message });
+  }
 });
 
-//get a book by id
-app.get("/api/v1/books/:id", (req, res) => {
-    const {id}=req.params;
-    db.collection("books").findOne({_id:new ObjectId(id)}).then((result) => {
-
-        
-        if(result.matchedCount===0){
-            res.status(404).json({"message":"book not found"});
-        }else{
-            res.status(200).json({"message":"Book fetched successfully","data":result});
-        }
-    }).catch((err) => {
-        err.message="Problem in fetching book details";
-        throw error;
-    });
-} );
-
-//update the book by id
-app.put("/api/v1/books/:id", (req,res)=>{
-    const {id}=req.params;
-    const updateData=req.body;
-    db.collection("books").updateOne({_id:new ObjectId(id)},{$set:updateData}).then((result)=>{
-        if(result.matchedCount===0){
-            res.status(404).json({"message":"book not found"});
-        }else{
-            res.status(200).json({"message":"Book updated successfully"});
-        }
-    }).catch((err)=>{
-        err.message="Problem in updating book details";
-        throw error;
-    });
-})
-
-//delete the book by id
-app.delete("/api/v1/books/:id",(req,res)=>{
-    const {id}=req.params;
-    db.collection("books").deleteOne({_id:new ObjectId(id)}).then((result)=>{
-        if(result.deletedCount===0){
-            res.status(404).json({"message":"book not found"});
-        }else{
-            res.status(200).json({"message":"Book deleted successfully"});
-        }
-    }).catch((err)=>{
-        err.message="Problem in deleting book details";
-        throw error;
-    });
+// Read one book
+app.get("/api/v1/books/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return res.status(400).json({ message: "Invalid book id" });
+    const book = await db.collection("books").findOne({ _id: new ObjectId(id) });
+    if (!book) return res.status(404).json({ message: "Book not found" });
+    return res.status(200).json({ message: "Book fetched successfully", data: book });
+  } catch (error) {
+    return res.status(500).json({ message: "Problem fetching book details", error: error.message });
+  }
 });
 
-//Error handling middleware
+// Update a book
+app.put("/api/v1/books/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return res.status(400).json({ message: "Invalid book id" });
+    const { _id, ...updates } = req.body;
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "Provide at least one field to update" });
+    }
+    const result = await db.collection("books").updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updates }
+    );
+    if (result.matchedCount === 0) return res.status(404).json({ message: "Book not found" });
+    return res.status(200).json({ message: "Book updated successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: "Problem updating book", error: error.message });
+  }
+});
+
+// Delete a book
+app.delete("/api/v1/books/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) return res.status(400).json({ message: "Invalid book id" });
+    const result = await db.collection("books").deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0) return res.status(404).json({ message: "Book not found" });
+    return res.status(200).json({ message: "Book deleted successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: "Problem deleting book", error: error.message });
+  }
+});
+
 app.use((err, req, res, next) => {
-    err.message = err.message || "Internal Server Error";
-    res.status(500).json({ message: err.message });
+  console.error(err);
+  res.status(err.status || 500).json({ message: err.message || "Internal Server Error" });
 });
 
-//404 handler middleware
-app.use((req, res, next) => {
-    res.status(404).json({ message: "Route not found" });
-});
+const startServer = async () => {
+  if (!MONGO_URL) {
+    console.error("MONGO_URI is missing. Add it to the environment variables.");
+    process.exit(1);
+  }
 
-app.listen(8080, () => {
-    console.log("Server is running on port http://localhost:8080");
-});
+  const client = new MongoClient(MONGO_URL);
+  try {
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log(`Connected to database: ${DB_NAME}`);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+    await client.close().catch(() => {});
+    process.exit(1);
+  }
+};
+
+startServer();
