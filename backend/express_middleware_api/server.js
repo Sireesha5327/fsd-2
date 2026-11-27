@@ -5,7 +5,7 @@ import morgan from "morgan";
 
 
 const app = express();
-const port=6500;
+const port = process.env.PORT || 6500;
 //1.Apllication-level middleware
 //4.Third party
 app.use(cors());
@@ -33,8 +33,8 @@ const logger=(req,res,next)=>{
 };
 //2.Route Specific
 const validatePatient=(req,res,next)=>{
-    const{name,age,word }=req.body;
-    if(!name || !age || !word){
+    const { name, age, word } = req.body || {};
+    if (!name || !Number.isInteger(Number(age)) || Number(age) <= 0 || !word) {
         return res.status(400).json({message:"Invalid patient data"});
     }
     next();
@@ -52,7 +52,7 @@ app.get("/api/v1/patients",(req,res)=>{
 //GET - Read by ID: http://localhost:6500/api/v1/patients/:id
 app.get("/api/v1/patients/:id",(req,res)=>{
    const {id}=req.params;
-   if(id<1){
+   if (!Number.isInteger(Number(id)) || Number(id) < 1) {
     const err=new Error("Patient not found");
     err.statusCode=404;
     throw err;
@@ -93,5 +93,5 @@ app.use((req,res,next)=>{
     res.status(404).json({message:"Resource not found"});
 });
 app.listen(port,()=>{
-    console.log(`Server is running on port http://localhost:${port}`);
+    console.log(`Server is running on port ${port}`);
 });
